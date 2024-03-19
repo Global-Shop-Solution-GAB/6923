@@ -1,0 +1,209 @@
+﻿Program.Sub.Preflight.Start
+V.Global.sFileLocation.Declare(String,"")
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Modified over VT by D. Duncan 9/28/2022 to output REG and OT rather than 1 and 2.
+F.Intrinsic.Control.SetErrorHandler("Get_Data_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String,"")
+
+f.Intrinsic.Control.If(v.Caller.Hook,=,15290)
+	F.Intrinsic.UI.InvokeWaitDialog("Getting Labor Records................")
+	F.Intrinsic.Control.CallSub(Create_Dir)
+	F.Intrinsic.Control.CallSub(Get_Data)
+	F.Intrinsic.Control.CallSub(Exit)
+F.Intrinsic.Control.Else
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Get_Data_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	F.Intrinsic.String.Build("Project: GCG_6174_Pyrl_Export.g2u {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Exit)
+Function.Intrinsic.Control.EndIf
+Program.Sub.Main.End
+
+Program.Sub.Exit.Start
+F.Intrinsic.Control.SetErrorHandler("Exit_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String,"")
+
+F.Intrinsic.Control.If(V.ODBC.Con.State,=,1)
+	F.ODBC.Connection!Con.Close
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.End
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Exit_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	F.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+Program.Sub.Exit.End
+
+Program.Sub.Get_Data.Start
+F.Intrinsic.Control.SetErrorHandler("Get_Data_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String,"")
+V.Local.sCymd.Declare(String,"")
+V.Local.sTime.Declare(String,"")
+V.Local.sSQL.Declare(String,"")
+
+F.Intrinsic.String.Left(V.Passed.888888,8,V.Local.sCymd)
+F.Intrinsic.String.Mid(V.Passed.888888,9,6,V.Local.sTime)
+
+F.ODBC.Connection!con.OpenCompanyConnection
+
+'Getting labor records
+f.Intrinsic.String.Build("select Employee,Type, Descr, sum(CAST(RTRIM(hours) AS DOUBLE)) as HRS from Pyrl_Labor_Xfer where Run_Cymd = '{0}' and Run_Time = '{1}' group by Employee, Type,Descr ",v.Local.sCymd,v.Local.sTime,,V.Local.sSQL)
+f.Data.DataTable.CreateFromSQL("DT","con",v.Local.sSQL,True)
+
+F.Intrinsic.Control.CallSub(Create_File)
+
+F.ODBC.Connection!Con.Close
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Get_Data_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	F.Intrinsic.String.Build("Project: GCG_6174_Pyrl_Export.g2u {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Exit)
+Function.Intrinsic.Control.EndIf
+Program.Sub.Get_Data.End
+
+Program.Sub.Create_File.Start
+F.Intrinsic.Control.SetErrorHandler("Create_File_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String,"")
+V.Local.i.Declare(Long,0)
+V.Local.sRecord.Declare(String,"")
+V.Local.sType.Declare(String,"")
+V.Local.sDateTime.Declare(String,"")
+V.Local.sTemp.Declare(String,"")
+V.Local.sFile.Declare(String,"")
+v.Local.bVal.Declare
+
+'building file data
+F.Intrinsic.Control.If(V.DataTable.DT.RowCount--,<>,-1)
+	F.Intrinsic.Control.For(V.Local.i,0,V.DataTable.DT.RowCount--,1)
+		F.Intrinsic.Control.If(V.DataTable.DT(V.Local.i).Type!FieldValTrim,=,"RT")
+			V.Local.sType.Set("REG")
+		F.Intrinsic.Control.Else
+			F.Intrinsic.Control.If(V.DataTable.DT(V.Local.i).Type!FieldValTrim,=,"OT")
+				V.Local.sType.Set("OT")
+			F.Intrinsic.Control.Else
+				V.Local.sType.Set(V.DataTable.DT(V.Local.i).Descr!FieldValTrim)
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.EndIf
+		
+		'Check if employee number is numeric.  If so, strip the zeros.
+		f.Intrinsic.Math.IsNumeric(V.DataTable.DT(V.Local.i).Employee!FieldValTrim,v.Local.bVal)
+		f.Intrinsic.Control.If(v.Local.bVal)
+			'Strip zero's
+			f.Data.DataTable.SetValue("DT",v.Local.i,"Employee", V.DataTable.DT(V.Local.i).Employee!FieldValLong)
+		f.Intrinsic.Control.EndIf
+		
+		F.Intrinsic.Control.If(V.Local.sRecord.Trim,=,"")
+			F.Intrinsic.String.Build("{0},E,{1},{2}",V.DataTable.DT(V.Local.i).Employee!FieldValTrim,V.Local.sType,V.DataTable.DT(V.Local.i).HRS!FieldVal,V.Local.sRecord)
+		F.Intrinsic.Control.Else
+			F.Intrinsic.String.Build("{4}{3}{0},E,{1},{2}",V.DataTable.DT(V.Local.i).Employee!FieldValTrim,V.Local.sType,V.DataTable.DT(V.Local.i).HRS!FieldVal,V.Ambient.NewLine,V.Local.sRecord,V.Local.sRecord)
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.Next(V.Local.i)
+F.Intrinsic.Control.Else
+	F.Intrinsic.UI.CloseWaitDialog
+	F.Intrinsic.UI.Msgbox("No Labor Records to Process................","Attention")
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndIf
+
+F.Data.DataTable.Close("DT")
+
+F.Intrinsic.UI.CloseWaitDialog
+
+'letting user select save location if canceled save to custom folder the program will then launch open file dir where file is located
+F.Intrinsic.Control.If(V.Local.sRecord.Trim,<>,"")
+	F.Intrinsic.String.Format(V.Ambient.Now,"MMDDYYHhNnSs",V.Local.sDateTime)
+	F.Intrinsic.String.Build("PyrlExport_{0}.csv",V.Local.sDateTime,V.Local.sTemp)
+	F.Intrinsic.UI.ShowSaveFileDialog(V.Local.sTemp,8,V.Local.sTemp)
+
+	F.Intrinsic.Control.If(V.Local.sTemp,<>,"***CANCEL***")
+		F.Intrinsic.File.String2File(V.Local.sTemp,V.Local.sRecord)
+		F.Intrinsic.String.Split(V.Local.sTemp,"\",V.Local.sTemp)
+		F.Intrinsic.Control.For(V.Local.i,0,V.Local.sTemp.UBound)
+			F.Intrinsic.Control.If(V.Local.i,<,V.Local.sTemp.UBound)
+				F.Intrinsic.Control.If(V.Local.i,=,0)
+					F.Intrinsic.String.Build("{0}\",V.Local.sTemp(V.Local.i),V.Local.sTemp)
+				F.Intrinsic.Control.Else
+					F.Intrinsic.String.Build("{0}{1}\",V.Local.sTemp,V.Local.sTemp(V.Local.i),V.Local.sTemp)
+				F.Intrinsic.Control.EndIf
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.Next(V.Local.i)
+		F.Intrinsic.Task.ShellExec(V.Caller.Handle,"",V.Local.sTemp,"","",1)
+	F.Intrinsic.Control.Else
+		F.Intrinsic.String.Format(V.Ambient.Now,"MMDDYYHhNnSs",V.Local.sDateTime)
+		F.Intrinsic.String.Build("{0}PyrlExport_{1}.csv",V.Global.sFileLocation,V.Local.sDateTime,V.Local.sFile)
+		F.Intrinsic.File.String2File(V.Local.sFile,V.Local.sRecord)
+		F.Intrinsic.Task.ShellExec(V.Caller.Handle,"",V.Global.sFileLocation,"","",1)
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Create_File_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	F.Intrinsic.String.Build("Project: GCG_6174_Pyrl_Export.g2u {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Exit)
+Function.Intrinsic.Control.EndIf
+Program.Sub.Create_File.End
+
+Program.Sub.Create_Dir.Start
+F.Intrinsic.Control.SetErrorHandler("Create_Dir_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String,"")
+V.Local.bRet.Declare(Boolean,False)
+
+F.Intrinsic.Control.If(V.Caller.GlobalDir.Right1,=,"\")
+	F.Intrinsic.String.Build("{0}Custom\",V.Caller.GlobalDir,V.Global.sFileLocation)
+F.Intrinsic.Control.Else
+	F.Intrinsic.String.Build("{0}\Custom\",V.Caller.GlobalDir,V.Global.sFileLocation)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.File.DirExists(V.Global.sFileLocation,V.Local.bRet)
+
+F.Intrinsic.Control.If(V.Local.bRet,=,False)
+	F.Intrinsic.File.CreateDir(V.Global.sFileLocation)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.Build("{0}6174\",V.Global.sFileLocation,V.Global.sFileLocation)
+
+F.Intrinsic.File.DirExists(V.Global.sFileLocation,V.Local.bRet)
+
+F.Intrinsic.Control.If(V.Local.bRet,=,False)
+	F.Intrinsic.File.CreateDir(V.Global.sFileLocation)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Create_Dir_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	F.Intrinsic.String.Build("Project: GCG_6174_Pyrl_Export.g2u {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Exit)
+Function.Intrinsic.Control.EndIf
+Program.Sub.Create_Dir.End
+
+Program.Sub.Comments.Start
+${$5$}$2.0.0.0$}$2
+${$6$}$dduncan$}$20221001094349885$}$r0o+00bj735YsiGsQ60YIo/Zb+26OZQGh6K7Upfx06ED7q3ODQCwP+yZSKvBRmJQe5hzD9e8BMY=
+Program.Sub.Comments.End
